@@ -1,0 +1,8 @@
+# Ulysses-FC (STM32H745ZI, CM7 + CM4) with the BMP585 barometer on I2C1 0x46. The board model brings its own blank SD card on SDMMC2.
+# The hex holds both cores (sim/build.sh). Run via sim/run.sh.
+machines:
+  dut:
+    mcu: Ulysses-FC
+    elf: build/baro.hex
+    parts:
+      - { name: baro, type: i2c-device, bus: i2c1, address: 0x46, script: peers/bmp585.py }

@@ -1,17 +1,19 @@
 #!/bin/sh
-# Run both cores of a Debug build on pyrite's Ulysses-FC (STM32H745ZI, 24 MHz HSE,
-# SD card on SDMMC2). Extra arguments go to `sim run` (--timeout, --trace-symbol ...).
-#   (cd ulysses/cfp && cmake --preset Debug && cmake --build build/Debug)
-#   sim/run.sh --timeout 1
+# usage: sim/run.sh [charts]   Needs sim on PATH and sim/build.sh done. Prints PASS or FAIL.
+# Run 1 (main, unmodified): 0.3 s of both cores, trace-symbol on each core's StartDefaultTask and the
+#   fault/assert handlers (addresses are those of the Debug build in sim/build.sh), plus exception entries.
+# Run 2 (dev/ivan/baro + patch_baro.py): 2.2 s, the BMP585 driver sampled every 20 ms against peers/bmp585.py.
+# "charts" also draws sim/screenshots/*.png (needs matplotlib).
 set -e
 cd "$(dirname "$0")/.."
-B=ulysses/cfp/build/Debug
-out=$(mktemp -d)
-trap 'rm -rf "$out"' EXIT
-# One image for both cores: CM7 in flash bank 1, CM4 in bank 2. The CM7 file's
-# end-of-file record is dropped so the CM4's records follow it.
-arm-none-eabi-objcopy -O ihex "$B/CM7/build/ulysses_cm7.elf" "$out/cm7.hex"
-arm-none-eabi-objcopy -O ihex "$B/CM4/build/ulysses_cm4.elf" "$out/cm4.hex"
-grep -v ':00000001FF' "$out/cm7.hex" > "$out/ulysses.hex"
-cat "$out/cm4.hex" >> "$out/ulysses.hex"
-sim Ulysses-FC run --elf "$out/ulysses.hex" "$@"
+mkdir -p sim/out
+T=""; for a in 0x08009e14 0x0810ad4c 0x08009a84 0x0810ab2c 0x0800af28 0x0810be58 0x08009668 0x0810a878; do T="$T --trace-symbol $a"; done
+sim run --scenario sim/scenario-boot.yaml --timeout 0.3 --trace-interrupts $T > sim/out/trace.txt
+grep '(TRACE)' sim/out/trace.txt > sim/out/boot.txt
+grep '(IRQ)' sim/out/trace.txt > sim/out/irq.txt
+sim run --scenario sim/scenario.yaml --timeout 2.2 --ascii --output sim/out/baro.txt >/dev/null
+if [ "$1" = charts ]; then
+  python3 sim/analyze.py sim/out/baro.txt sim/out/boot.txt sim/out/irq.txt sim/screenshots "$(sim version | head -1), $(date +%F)" && echo PASS || { echo FAIL; exit 1; }
+else
+  python3 sim/analyze.py sim/out/baro.txt sim/out/boot.txt sim/out/irq.txt && echo PASS || { echo FAIL; exit 1; }
+fi

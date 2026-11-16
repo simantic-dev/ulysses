@@ -1,0 +1,5 @@
+# The unmodified main-branch firmware on the board model (blank SD card on SDMMC2 included); no parts attached; the firmware does not talk to any yet.
+machines:
+  dut:
+    mcu: Ulysses-FC
+    elf: build/main.hex
