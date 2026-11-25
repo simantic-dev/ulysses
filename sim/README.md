@@ -5,6 +5,10 @@ cores on a simulated `Ulysses-FC` (STM32H745ZI, 24 MHz HSE, blank SD card on SDM
 Backend: Simantic's `sim` 0.10.0 (build f219eb31), the released binary, on the **pyrite** engine
 (Rust, in-process, JIT on by default). Everything below was run on 2026-11-16.
 
+![BMP585 driver samples appearing over virtual time](screenshots/ulysses-baro.gif)
+
+*Animation of config 2 re-run on `sim` 0.10.8 (build 64f89c38), 2026-11-25: the 100 samples the CM7 driver printed on USART3, drawn in the order they arrive, against the peer's scripted pressure. Virtual time (2.2 s); the run took 49 s of wall time on a loaded laptop, about 22 s per virtual second. Pressure error vs the peer 8.8 Pa max, temperature 5.6 mC max. Redraw: `sim/make_gif.py sim/out/baro.txt sim/screenshots/ulysses-baro.gif "sim 0.10.8"` (matplotlib, pillow).*
+
 ![BMP585 driver output against the peer's world](screenshots/baro.png)
 
 *Config 2, 2.0 s of virtual time: the real BMP585 driver (`dev/ivan/baro`) sampled every 20 ms by the CM7 and
