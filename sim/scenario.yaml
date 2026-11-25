@@ -3,6 +3,6 @@
 machines:
   dut:
     mcu: Ulysses-FC
-    elf: build/baro.hex
+    elf: fw/baro.hex
     parts:
       - { name: baro, type: i2c-device, bus: i2c1, address: 0x46, script: peers/bmp585.py }

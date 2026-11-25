@@ -1,0 +1,23 @@
+#!/bin/sh
+# Runs the Ulysses firmware (dev/ivan/baro build, both cores) on the simulated STM32H745 Ulysses-FC. The real BMP585
+# driver reads a scripted barometer peer (sim/peers/bmp585.py) every 20 ms; this prints what the firmware sent on USART3,
+# decoded to hPa / degC, plus altitude from the ISA formula (computed here, the firmware does not print altitude).
+# Usage: ./demo   Needs `sim` on PATH (or SIM=/path/to/sim). The firmware images are committed in sim/fw.
+set -eu
+SIM="${SIM:-sim}"
+cd "$(dirname "$0")/sim"
+command -v "$SIM" >/dev/null || { echo "sim not found. Install it: curl -fsSL https://simantic.com/install | sh" >&2; exit 1; }
+mkdir -p out
+echo "Ulysses-FC (STM32H745, CM7+CM4) + BMP585 peer on I2C1: simulating 2.2 s ..."
+"$SIM" run --scenario scenario.yaml --timeout 2.2 --ascii --output out/demo.txt >/dev/null 2>&1
+awk '
+/BARO init=/ { print "BMP585 driver init=" substr($0, index($0, "init=") + 5) }
+/BARO n=/ {
+  for (i = 1; i <= NF; i++) { split($i, kv, "="); v[kv[1]] = kv[2] }
+  n = v["n"]; hpa = v["Pa"] / 100; alt = 44330 * (1 - (v["Pa"] / 101325) ^ 0.190295)
+  last = n; if (v["read"] != 0) bad++
+  if (n % 5 == 0 || n == 99) printf "t=%4.2f s  sample %2d  pressure %7.2f hPa  temp %5.2f C  alt %6.1f m\n", v["t_ms"] / 1000, n, hpa, v["mC"] / 1000, alt
+}
+/BARO done/ { done = 1 }
+END { printf "done: %d samples read by the CM7, %d bus errors, driver loop %s\n", last + 1, bad + 0, done ? "finished" : "DID NOT FINISH" }
+' out/demo.txt

@@ -2,4 +2,4 @@
 machines:
   dut:
     mcu: Ulysses-FC
-    elf: build/main.hex
+    elf: fw/main.hex
