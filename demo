@@ -1,23 +1,34 @@
 #!/bin/sh
-# Runs the Ulysses firmware (dev/ivan/baro build, both cores) on the simulated STM32H745 Ulysses-FC. The real BMP585
-# driver reads a scripted barometer peer (sim/peers/bmp585.py) every 20 ms; this prints what the firmware sent on USART3,
-# decoded to hPa / degC, plus altitude from the ISA formula (computed here, the firmware does not print altitude).
+# Ulysses (STM32H745, CM7 + CM4) on the simulator. Prints the lines the firmware side really produces, as they happen:
+#  1. main firmware: sim --trace-symbol hits on each core's StartDefaultTask + the first interrupt-trace lines (the firmware prints nothing).
+#  2. dev/ivan/baro firmware: the BARO lines the CM7 prints on USART3, verbatim, each followed by "=>" and the value decoded here.
+# The sim writes to a log file and this script prints new lines once a second, so a slow terminal never throttles the sim.
 # Usage: ./demo   Needs `sim` on PATH (or SIM=/path/to/sim). The firmware images are committed in sim/fw.
 set -eu
 SIM="${SIM:-sim}"
 cd "$(dirname "$0")/sim"
 command -v "$SIM" >/dev/null || { echo "sim not found. Install it: curl -fsSL https://simantic.com/install | sh" >&2; exit 1; }
 mkdir -p out
-echo "Ulysses-FC (STM32H745, CM7+CM4) + BMP585 peer on I2C1: simulating 2.2 s ..."
-"$SIM" run --scenario scenario.yaml --timeout 2.2 --ascii --output out/demo.txt >/dev/null 2>&1
-awk '
-/BARO init=/ { print "BMP585 driver init=" substr($0, index($0, "init=") + 5) }
-/BARO n=/ {
-  for (i = 1; i <= NF; i++) { split($i, kv, "="); v[kv[1]] = kv[2] }
-  n = v["n"]; hpa = v["Pa"] / 100; alt = 44330 * (1 - (v["Pa"] / 101325) ^ 0.190295)
-  last = n; if (v["read"] != 0) bad++
-  if (n % 5 == 0 || n == 99) printf "t=%4.2f s  sample %2d  pressure %7.2f hPa  temp %5.2f C  alt %6.1f m\n", v["t_ms"] / 1000, n, hpa, v["mC"] / 1000, alt
+stream() { # logfile awk-program: run "$@" into logfile, print new lines through the awk program as they appear
+  log=$1; prog=$2; shift 2
+  : > "$log"; "$@" > "$log" 2>&1 & pid=$!; n=0
+  while :; do
+    alive=1; kill -0 "$pid" 2>/dev/null || alive=0
+    total=$(wc -l < "$log")
+    if [ "$total" -gt "$n" ]; then tail -n +$((n + 1)) "$log" | head -n $((total - n)) | awk "$prog"; n=$total; fi
+    [ "$alive" = 1 ] || break
+    sleep 1
+  done
+  wait "$pid"
 }
-/BARO done/ { done = 1 }
-END { printf "done: %d samples read by the CM7, %d bus errors, driver loop %s\n", last + 1, bad + 0, done ? "finished" : "DID NOT FINISH" }
-' out/demo.txt
+T=""; for a in 0x08009e14 0x0810ad4c 0x08009a84 0x0810ab2c 0x0800af28 0x0810be58 0x08009668 0x0810a878; do T="$T --trace-symbol $a"; done
+echo "# main firmware, both cores (CM7 StartDefaultTask=0x08009e14, CM4=0x0810ad4c)"
+stream out/boot.log '/\(TRACE\)|^Elapsed/' "$SIM" run --scenario scenario-boot.yaml --timeout 0.3 --trace-interrupts $T
+echo "# first interrupt-trace lines of that run (both cores, 4730 enter/exit records in total):"
+grep -m4 '(IRQ)' out/boot.log
+echo
+echo "# dev/ivan/baro firmware: BMP585 driver on the CM7, scripted barometer peer on I2C1 0x46; USART3 lines verbatim"
+stream out/baro.log '/BARO n=/ { for (i = 1; i <= NF; i++) { split($i, kv, "="); v[kv[1]] = kv[2] }
+           printf "%s   => %.2f hPa %.2f C\n", $0, v["Pa"] / 100, v["mC"] / 1000; next }
+         /BARO/' "$SIM" run --scenario scenario.yaml --timeout 2.2 --ascii
+echo "# run finished: 2.2 virtual s, firmware printed BARO done"

@@ -9,11 +9,13 @@ Firmware for UBC Rocket's experimental VTOL platform.
 
 ![Ulysses firmware reading a simulated barometer](media/ulysses-demo.gif)
 
-The real BMP585 driver (`dev/ivan/baro`) runs on the CM7 of a simulated STM32H745 and samples a scripted barometer
-every 20 ms; `./demo` prints what the firmware sent on USART3 as hPa and degC. Pressure and temperature are
-**stand-ins**: `sim/peers/bmp585.py` plays a scripted climb to 300 m, hold, and descent (the stimulus, not a flight),
-and the driver's job is to decode it. The `alt` column is not printed by the firmware; `./demo` computes it from the
-driver's pressure with the ISA formula.
+`./demo` streams what the firmware side really emits, live. The Ulysses firmware on `main` prints nothing (no console),
+so part 1 shows the simulator's own evidence: `--trace-symbol` hits on each core's `StartDefaultTask` (CM7 at 1.78 ms, CM4
+at 10.07 ms; the `Error_Handler`, `HardFault_Handler` and assert addresses are traced too and never hit) and the first
+interrupt-trace lines. Part 2 runs the `dev/ivan/baro` build, whose real BMP585 driver the CM7 samples every 20 ms and
+prints on USART3: those `BARO` lines are shown verbatim, and the `=> hPa / C` suffix is added by `./demo`. This is the only
+log channel the firmware has. Pressure and temperature are **stand-ins**: `sim/peers/bmp585.py` plays a scripted climb to
+300 m, hold, and descent (the stimulus, not a flight).
 
 ```mermaid
 flowchart LR
@@ -22,13 +24,13 @@ flowchart LR
   dut -- "sdmmc2: blank card, HAL_SD_Init" --- dut_sdcard
   dut_baro(["baro<br/>BMP585 peer (Python, scripted climb/hold/descent)"])
   dut -- "i2c1 0x46: pressure + temperature registers" --- dut_baro
-  dut -. "usart3: BARO lines, decoded by ./demo" .-> out["terminal"]
+  dut -. "usart3: BARO lines" .-> out["terminal"]
 ```
 
 Run it (needs `sim` on PATH, `curl -fsSL https://simantic.com/install | sh`; the firmware images are committed in `sim/fw`):
 
 ```
-./demo     # about 90 s wall for 2.2 virtual s
+./demo     # about 100 s wall: 0.3 s boot trace + 2.2 virtual s of barometer
 sim/run.sh # PASS or FAIL checks
 ```
 
